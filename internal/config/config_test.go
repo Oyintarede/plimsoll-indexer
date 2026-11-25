@@ -24,7 +24,7 @@ func TestKeepAwakeURL(t *testing.T) {
 
 func setBase(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"NETWORK", "STELLAR_RPC_URL", "HORIZON_URL", "STELLAR_NETWORK_PASSPHRASE", "WEBHOOK_ADMIN_TOKEN", "WEBHOOK_ENCRYPTION_KEY"} {
+	for _, k := range []string{"NETWORK", "STELLAR_RPC_URL", "HORIZON_URL", "STELLAR_NETWORK_PASSPHRASE", "WEBHOOK_ADMIN_TOKEN", "WEBHOOK_ENCRYPTION_KEY", "METRICS_ENABLED"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("DATABASE_URL", "postgres://x")
@@ -156,6 +156,23 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if got.KeepAwakeInterval.String() != "10m0s" {
 		t.Errorf("KeepAwakeInterval = %v, want 10m0s", got.KeepAwakeInterval)
+	}
+	if got.MetricsEnabled {
+		t.Error("MetricsEnabled = true, want false by default")
+	}
+}
+
+func TestMetricsEnabledConfiguration(t *testing.T) {
+	setBase(t)
+	t.Setenv("METRICS_ENABLED", "true")
+	got, err := Load()
+	if err != nil || !got.MetricsEnabled {
+		t.Fatalf("METRICS_ENABLED=true: enabled=%v err=%v", got.MetricsEnabled, err)
+	}
+
+	t.Setenv("METRICS_ENABLED", "maybe")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "METRICS_ENABLED") {
+		t.Fatalf("want invalid boolean error, got %v", err)
 	}
 }
 

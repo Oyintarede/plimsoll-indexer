@@ -70,6 +70,7 @@ type Config struct {
 	TomlInterval      time.Duration
 	CORSOrigins       []string
 	LogLevel          string
+	MetricsEnabled    bool
 	// KeepAwakeURL is requested every KeepAwakeInterval so a host that sleeps
 	// idle services (Render's free tier) keeps this one, and its poster, up.
 	KeepAwakeURL      string
@@ -113,7 +114,16 @@ func Load() (Config, error) {
 		WebhookAdminToken:    os.Getenv("WEBHOOK_ADMIN_TOKEN"),
 		WebhookEncryptionKey: os.Getenv("WEBHOOK_ENCRYPTION_KEY"),
 		LogLevel:             envOr("LOG_LEVEL", "info"),
+		MetricsEnabled:       false,
 		KeepAwakeURL:         keepAwakeURL(os.Getenv("KEEP_AWAKE_URL"), os.Getenv("RENDER_EXTERNAL_URL")),
+	}
+	if value := os.Getenv("METRICS_ENABLED"); value != "" {
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("METRICS_ENABLED: %w", err))
+		} else {
+			c.MetricsEnabled = enabled
+		}
 	}
 
 	if c.RPCURL == "" {

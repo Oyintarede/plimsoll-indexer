@@ -19,6 +19,7 @@ import (
 	"github.com/stellar/go-stellar-sdk/strkey"
 
 	"github.com/plimsoll-protocol/plimsoll-indexer/internal/coverage"
+	"github.com/plimsoll-protocol/plimsoll-indexer/internal/metrics"
 	"github.com/plimsoll-protocol/plimsoll-indexer/internal/store"
 	"github.com/plimsoll-protocol/plimsoll-indexer/internal/webhook"
 )
@@ -56,6 +57,7 @@ type Server struct {
 	WebhookCodec      *webhook.SecretCodec
 	Network           NetworkInfo
 	CORS              []string
+	Metrics           *metrics.Metrics
 	Log               *slog.Logger
 	Now               func() time.Time
 }
@@ -80,6 +82,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/webhooks", s.createWebhook)
 	mux.HandleFunc("GET /v1/webhooks", s.listWebhooks)
 	mux.HandleFunc("DELETE /v1/webhooks/{id}", s.deleteWebhook)
+	if s.Metrics != nil {
+		mux.Handle("GET /metrics", s.Metrics.Handler())
+		return s.Metrics.Middleware(s.cors(mux))
+	}
 	return s.cors(mux)
 }
 

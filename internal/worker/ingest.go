@@ -30,6 +30,10 @@ type eventStore interface {
 	ApplyEvents(ctx context.Context, name, cursor string, ledger uint32, events []any) error
 }
 
+type ingestMetrics interface {
+	SetIngestProgress(ingested, latest uint32)
+}
+
 // Ingester copies Plimsoll contract events from RPC into Postgres.
 type Ingester struct {
 	RPC         eventSource
@@ -37,6 +41,7 @@ type Ingester struct {
 	ContractIDs []string
 	StartLedger uint32
 	Log         *slog.Logger
+	Metrics     ingestMetrics
 }
 
 // Run pulls every available page once. Call it on a ticker.
@@ -44,6 +49,16 @@ func (in *Ingester) Run(ctx context.Context) error {
 	progress, err := in.Store.Progress(ctx, cursorName)
 	if err != nil {
 		return fmt.Errorf("read progress: %w", err)
+	}
+	latestLedger := progress.ScannedLedger
+	if in.Metrics != nil {
+		latest, err := in.RPC.GetLatestLedger(ctx)
+		if err != nil {
+			in.Log.Warn("could not refresh ingest metrics", "err", err)
+		} else {
+			latestLedger = latest.Sequence
+			in.Metrics.SetIngestProgress(progress.ScannedLedger, latestLedger)
+		}
 	}
 	cursor := progress.Cursor
 	recovered := false
@@ -93,6 +108,12 @@ func (in *Ingester) Run(ctx context.Context) error {
 		}
 		if err := in.Store.ApplyEvents(ctx, cursorName, resp.Cursor, resp.LatestLedger, decoded); err != nil {
 			return fmt.Errorf("apply events: %w", err)
+		}
+		if resp.LatestLedger > latestLedger {
+			latestLedger = resp.LatestLedger
+		}
+		if in.Metrics != nil {
+			in.Metrics.SetIngestProgress(resp.LatestLedger, latestLedger)
 		}
 		if len(decoded) > 0 {
 			in.Log.Info("ingested events", "count", len(decoded), "latest_ledger", resp.LatestLedger)
