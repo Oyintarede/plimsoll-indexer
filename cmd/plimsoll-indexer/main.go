@@ -20,6 +20,7 @@ import (
 	"github.com/plimsoll-protocol/plimsoll-indexer/internal/api"
 	"github.com/plimsoll-protocol/plimsoll-indexer/internal/config"
 	"github.com/plimsoll-protocol/plimsoll-indexer/internal/horizon"
+	"github.com/plimsoll-protocol/plimsoll-indexer/internal/metrics"
 	"github.com/plimsoll-protocol/plimsoll-indexer/internal/soroban"
 	"github.com/plimsoll-protocol/plimsoll-indexer/internal/stellartoml"
 	"github.com/plimsoll-protocol/plimsoll-indexer/internal/store"
@@ -33,6 +34,9 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(runHealthcheck())
+	}
+	if len(os.Args) > 1 && os.Args[1] == "backfill" {
+		os.Exit(runBackfillCommand(os.Args[2:]))
 	}
 
 	cfg, err := config.Load()
@@ -61,6 +65,12 @@ func run(cfg config.Config, log *slog.Logger) error {
 	defer rpc.Close()
 	hz := horizon.NewClient(cfg.HorizonURL)
 
+	var observations *metrics.Metrics
+	if cfg.MetricsEnabled {
+		observations = metrics.New()
+		log.Info("Prometheus metrics enabled", "path", "/metrics")
+	}
+
 	var webhookCodec *webhook.SecretCodec
 	var webhookDispatcher *webhook.Dispatcher
 	if cfg.WebhookAdminToken != "" {
@@ -77,6 +87,7 @@ func run(cfg config.Config, log *slog.Logger) error {
 		ContractIDs: []string{cfg.CoverageLedgerID, cfg.ReporterRegistryID},
 		StartLedger: cfg.StartLedger,
 		Log:         log.With("job", "ingest"),
+		Metrics:     observations,
 	}
 	// Ingest once before the other jobs start, so they see the listed assets.
 	if err := ingester.Run(ctx); err != nil {
@@ -143,6 +154,7 @@ func run(cfg config.Config, log *slog.Logger) error {
 			RepostAfter: cfg.RepostAfter,
 			Log:         log.With("job", "poster"),
 			Now:         time.Now,
+			Metrics:     observations,
 		}
 		// Left nil when no second Horizon is configured: comparing hz against
 		// itself would always agree and prove nothing.
@@ -173,9 +185,10 @@ func run(cfg config.Config, log *slog.Logger) error {
 				CoverageLedgerID:   cfg.CoverageLedgerID,
 				ReporterRegistryID: cfg.ReporterRegistryID,
 			},
-			CORS: cfg.CORSOrigins,
-			Log:  log.With("component", "api"),
-			Now:  time.Now,
+			CORS:    cfg.CORSOrigins,
+			Metrics: observations,
+			Log:     log.With("component", "api"),
+			Now:     time.Now,
 		}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
